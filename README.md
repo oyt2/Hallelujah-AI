@@ -1,3 +1,3 @@
 # AI-project
 
-Bu proje, Phi2 modelininin mesaj yaratımıyla FAISS endeksi ve e5-large-v2 modelinin anlam benzerliği karşılaştırmasını birlikte kullanarak kendisine sorulan Hristiyanlıkla ilgili soruları sadece Kutsal Kitap'ı kaynak edinerek cevaplıyor, kendisine sorulan sorunun içindeki kelimelere sayı değerleri vererek bu cümleye en yakın anlam sayı değeri olan ilk 3 ayeti kullanıp cevabını bu ayetler etrafında kuruyor.
+This project answers questions about Christianity using the Bible as its sole source. It combines the Phi-2 language model for response generation with a FAISS index and the e5-large-v2 embedding model for semantic similarity search. The system converts the user's question into a numerical vector representation, compares it against Bible verse embeddings, and retrieves the three verses with the closest semantic meaning. Phi-2 then uses these verses as context to generate a response grounded in Scripture.
