@@ -30,6 +30,7 @@ The next step was providing the model with a structured Biblical source.
 Early versions used Bible files containing additional formatting, commentary, footnotes, and special characters. These complicated parsing and retrieval, so I moved to a simpler format in which each book is identified by a heading and each verse follows a consistent structure:
 
 Genesis
+
 [1:1] In the beginning God created the heavens and the earth.
 
 [1:2] Now the earth was formless and empty,...
