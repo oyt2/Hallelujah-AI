@@ -9,7 +9,7 @@ The goal of this project is to develop an AI assistant familiar with Christian t
 **Development Process**
 **Initial Approach**
 
-I initially considered using GPT or similar large language models. However, I ultimately chose Microsoft's Phi-2, a smaller 2.7-billion-parameter causal language model that could be run locally and gave me greater control over the system's behavior.
+I initially considered using GPT or similar large language models. However, I ultimately chose Microsoft's Phi-2, a smaller 2.7 billion parameter causal language model that could be run locally and gave me greater control over the system's behavior.
 
 Rather than relying entirely on the language model's existing knowledge, I built the system around retrieving relevant passages from Scripture and supplying those passages to Phi-2 as context.
 
@@ -30,9 +30,9 @@ The next step was providing the model with a structured Biblical source.
 Early versions used Bible files containing additional formatting, commentary, footnotes, and special characters. These complicated parsing and retrieval, so I moved to a simpler format in which each book is identified by a heading and each verse follows a consistent structure:
 
 Genesis
-[1:1] In the beginning God created the heaven and the earth.
+[1:1] In the beginning God created the heavens and the earth.
 
-[1:2] And the earth was without form, and void...
+[1:2] Now the earth was formless and empty,...
 
 The program parses this structure into individual verse-text/reference pairs, such as the verse text alongside Genesis 1:1. Duplicate references are removed before the verses are passed into the retrieval system.
 
@@ -48,7 +48,7 @@ The current implementation still uses keyword overlap as an additional relevance
 
 **Phi-2**
 
-Phi-2 is a 2.7-billion-parameter causal language model developed by Microsoft Research.
+Phi-2 is a 2.7 billion parameter causal language model developed by Microsoft Research.
 
 As a causal language model, Phi-2 generates text by predicting subsequent tokens based on the tokens that came before them. Its relatively small size also makes local inference significantly more practical than many much larger language models.
 
@@ -109,10 +109,10 @@ One issue encountered during retrieval was that an individual Bible verse does n
 
 For example:
 
-For though there be that are called gods, whether in heaven or in earth, (as there be gods many, and lords many,)
+For even if there are so-called gods, whether in heaven or on earth (as indeed there are many “gods” and many “lords”),
 (I Corinthians 8:5)
 
-But to us there is but one God, the Father...
+yet for us there is but one God, the Father, from whom all things came and for whom we live;...
 (I Corinthians 8:6)
 
 Returning only I Corinthians 8:5 leaves the thought incomplete.
@@ -138,7 +138,7 @@ This allows the Relevant Bible Verses section to preserve more of a passage's in
 
 The final pipeline can be summarized as:
 
-**User Question**->**SentenceTransformer**->**Question Embedding**->**FAISS Semantic Search**->**Similarity + Relevance Filtering**->**Top Relevant Bible Verses**->**Extended Verse Context**->**Phi-2**->**Biblically Grounded Response**
+**User Question** → **SentenceTransformer** → **Question Embedding** → **FAISS Semantic Search** → **Similarity + Relevance Filtering** → **Top Relevant Bible Verses** → **Extended Verse Context** → **Phi-2** → **Biblically Grounded Response**
 
 
 The generated response is then formatted into two sections:
