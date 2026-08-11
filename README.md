@@ -6,22 +6,22 @@ Christianity using relevant Bible passages as its source material.
 **Core Technologies:** Python · Phi-2 · FAISS · SentenceTransformers · PyTorch
 
 
-**Problem**
+## Problem
 
 There are many AI systems capable of holding conversations, answering questions, and providing sources when necessary. However, while these systems perform well across many general-purpose topics, they may not consistently answer questions about Christianity using the desired theological source, tone, or format.
 
-**Solution**
+## Solution
 
 The goal of this project is to develop an AI assistant familiar with Christian terminology that answers questions using the Bible as its sole source of information.
 
-**Development Process**
-**Initial Approach**
+### Development Process
+## Initial Approach
 
 I initially considered using GPT or similar large language models. However, I ultimately chose Microsoft's Phi-2, a smaller 2.7 billion parameter causal language model that could be run locally and gave me greater control over the system's behavior.
 
 Rather than relying entirely on the language model's existing knowledge, I built the system around retrieving relevant passages from Scripture and supplying those passages to Phi-2 as context.
 
-**Reducing Hallucinations**
+## Reducing Hallucinations
 
 During early testing, Phi-2 frequently produced irrelevant hypothetical scenarios when answering religious questions. For example, when asked what the Bible says about love, the model could begin with a relevant response but eventually drift into unrelated hypothetical examples.
 
@@ -31,7 +31,7 @@ The first was a detailed system_prompt containing instructions that control the 
 
 The second was a clean_answer() function designed to detect phrases commonly associated with unwanted hypothetical or speculative responses and truncate the generated text before the hallucinated section. This function remains in the project as an experimental safeguard, although it is currently disabled in the main response pipeline.
 
-**Bible Parsing and Preprocessing**
+## Bible Parsing and Preprocessing
 
 The next step was providing the model with a structured Biblical source.
 
@@ -45,7 +45,7 @@ Genesis
 
 The program parses this structure into individual verse-text/reference pairs, such as the verse text alongside Genesis 1:1. Duplicate references are removed before the verses are passed into the retrieval system.
 
-**From Keyword Search to Semantic Search**
+## From Keyword Search to Semantic Search
 
 An early version of the project relied on predefined keywords such as money, love, sin, hate, and anger. The program searched for these words in the user's question and attempted to find related passages.
 
@@ -55,7 +55,7 @@ The project therefore transitioned toward semantic search, where the meaning of 
 
 The current implementation still uses keyword overlap as an additional relevance filter and fallback mechanism, but semantic similarity performs the primary retrieval.
 
-**Phi-2**
+## Phi-2
 
 Phi-2 is a 2.7 billion parameter causal language model developed by Microsoft Research.
 
@@ -69,7 +69,7 @@ The retrieval system first identifies passages relevant to the user's question. 
 
 This separation between retrieval and generation is the foundation of the project's RAG-style architecture.
 
-**FAISS (Facebook AI Similarity Search)**
+## FAISS (Facebook AI Similarity Search)
 
 Instead of maintaining enormous lists of keywords for every possible question, the project uses FAISS to perform semantic similarity searches across the Bible.
 
@@ -98,7 +98,7 @@ The embeddings are normalized, stored in a FAISS IndexFlatIP index, and compared
 
 This hybrid approach combines semantic similarity with lexical relevance filtering to reduce unrelated retrieval results.
 
-**SentenceTransformer / MPNet Embeddings**
+## SentenceTransformer / MPNet Embeddings
 
 The current version uses:
 
@@ -112,7 +112,7 @@ Its multilingual capabilities also create an interesting direction for future de
 
 The resulting embeddings are normalized and passed to FAISS for similarity search.
 
-**Verse Completion — get_extended_verse()**
+## Verse Completion — get_extended_verse()
 
 One issue encountered during retrieval was that an individual Bible verse does not always contain a complete grammatical sentence. Some sentences span multiple consecutive verses, meaning that retrieving only the highest-ranked verse can result in incomplete context.
 
@@ -143,7 +143,7 @@ I Corinthians 8:5–6
 
 This allows the Relevant Bible Verses section to preserve more of a passage's intended context rather than presenting an isolated or incomplete fragment.
 
-**Response Generation**
+## Response Generation
 
 The final pipeline can be summarized as:
 
@@ -158,7 +158,7 @@ Biblical Teaching:
 Relevant Bible Verses:
 [Retrieved passages and references]
 
-**Response Tone — warm_biblical_teaching()**
+## Response Tone — warm_biblical_teaching()
 
 During development, I also experimented with making Phi-2's responses warmer and more conversational.
 
