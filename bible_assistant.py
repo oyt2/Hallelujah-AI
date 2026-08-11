@@ -1,8 +1,3 @@
-# Install required packages
-!pip install -q transformers accelerate
-!pip install -q sentence-transformers faiss-cpu
-!pip install -q scikit-learn
-
 # Imports
 import re
 import glob
