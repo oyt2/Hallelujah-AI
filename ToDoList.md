@@ -1,0 +1,13 @@
+Although the model performs well on relatively straightforward questions, it has not yet been thoroughly evaluated on more complex theological questions. The next step is to test the model using more challenging prompts and improve its retrieval and response generation based on the results. Planned test questions include:
+->Prove the sovereignty of God.
+->Prove the free will of man.
+->Compare and contrast the sovereignty of God and the free will of man according to the Bible.
+->What are the core teachings of Christianity?
+->What is Paul's view on women teaching in the Church?
+->What is Peter's view?
+->According to the Bible, how were people saved in the Old Testament?
+->Hard: Are dinosaurs mentioned in the Bible?
+->Implement more extensive logging and debugging to identify when hallucinations occur and determine what causes them, particularly whether errors originate from verse retrieval, prompt construction, or the language model itself.
+->Use Hugging Face's Trainer API to fine-tune the model on a small Christianity/Bible-focused Q&A dataset, with the goal of improving its ability to answer theological questions while remaining grounded in Scripture.
+->Investigate multilingual semantic retrieval using MPNet, allowing users to potentially ask questions in multiple languages while still retrieving relevant passages from the Bible.
+->Build a user-friendly web interface with Gradio, turning the current notebook/prototype into an application that users can interact with directly. 
