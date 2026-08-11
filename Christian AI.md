@@ -155,23 +155,7 @@ I Corinthians 8:5–6
 
 The final pipeline can be summarized as:
 
-**User Question**
-      ↓
-**SentenceTransformer**
-      ↓
-**Question Embedding**
-      ↓
-**FAISS Semantic Search**
-      ↓
-**Similarity + Relevance Filtering**
-      ↓
-**Top Relevant Bible Verses**
-      ↓
-**Extended Verse Context**
-      ↓
-**Phi-2**
-      ↓
-**Biblically Grounded Response**
+**User Question**->**SentenceTransformer**->**Question Embedding**->**FAISS Semantic Search**->**Similarity + Relevance Filtering**->**Top Relevant Bible Verses**->**Extended Verse Context**->**Phi-2**->**Biblically Grounded Response**
 
 Phi-2 receives both the user's question and the retrieved passages. The generation prompt explicitly instructs the model to base its answer only on those passages and not introduce unrelated Biblical references, stories, or hypothetical scenarios.
 This allows the Relevant Bible Verses section to preserve more of the passage's intended context rather than presenting an isolated fragment.
