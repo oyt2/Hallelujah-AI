@@ -4,7 +4,7 @@ There are many AI systems capable of holding conversations, answering questions,
 
 **Solution**
 
-The goal of this project is to develop an AI assistant familiar with Christian terminology that answers questions using the Bible as its primary source of information.
+The goal of this project is to develop an AI assistant familiar with Christian terminology that answers questions using the Bible as its sole source of information.
 
 **Development Process**
 **Initial Approach**
@@ -79,20 +79,13 @@ may contain substantially different words while still discussing closely related
 The embeddings are normalized, stored in a FAISS IndexFlatIP index, and compared using their vector similarity.
 
 **When the user submits a question, the system:**
-
-1)Generates an embedding for the question.
-
-2)Searches the FAISS index for semantically similar Bible verses.
-
-3)Applies a minimum similarity threshold.
-
-4)Applies an additional keyword-overlap relevance filter.
-
-5)Removes duplicate references.
-
-6)Ranks the remaining passages by similarity.
-
-7)Supplies the strongest results to Phi-2 as context.
+1. Generates an embedding for the question.
+2. Searches the FAISS index for semantically similar Bible verses.
+3. Applies a minimum similarity threshold.
+4. Applies an additional keyword-overlap relevance filter.
+5. Removes duplicate references.
+6. Ranks the remaining passages by similarity.
+7. Supplies the strongest results to Phi-2 as context.
 
 This hybrid approach combines semantic similarity with lexical relevance filtering to reduce unrelated retrieval results.
 
@@ -110,46 +103,36 @@ Its multilingual capabilities also create an interesting direction for future de
 
 The resulting embeddings are normalized and passed to FAISS for similarity search.
 
-**Note on e5-large-v2**
-
-Earlier versions of the project experimented with e5-large-v2 for embedding and semantic retrieval. The current implementation, however, uses paraphrase-multilingual-mpnet-base-v2.
-
-The two therefore should not be described as simultaneously powering the current retrieval pipeline.
-
 **Verse Completion — get_extended_verse()**
 
-One problem encountered during retrieval was that an individual Bible verse does not always contain a complete grammatical sentence.
+One issue encountered during retrieval was that an individual Bible verse does not always contain a complete grammatical sentence. Some sentences span multiple consecutive verses, meaning that retrieving only the highest-ranked verse can result in incomplete context.
 
 For example:
 
-For though there be that are called gods,
-whether in heaven or in earth,
-(as there be gods many, and lords many,)
+For though there be that are called gods, whether in heaven or in earth, (as there be gods many, and lords many,)
 (I Corinthians 8:5)
 
 But to us there is but one God, the Father...
 (I Corinthians 8:6)
 
-Returning only I Corinthians 8:5 can therefore leave the thought incomplete.
+Returning only I Corinthians 8:5 leaves the thought incomplete.
 
-To address this, I created get_extended_verse(). The function examines a retrieved verse and can continue into consecutive verses so that the displayed passage preserves more of the original sentence and context. It verifies that subsequent passages belong to the same book and chapter and that their verse numbers are consecutive.
+To address this, I created get_extended_verse(). The function examines the retrieved verse and, when necessary, continues into consecutive verses to preserve the surrounding sentence and context. It verifies that subsequent passages belong to the same book and chapter and that their verse numbers are consecutive.
 
-The function limits how much additional text can be retrieved to prevent a single result from becoming excessively long.
+The function also limits the amount of additional text that can be retrieved to prevent a single result from becoming excessively long.
 
 For example:
 
 Question:
-
 "Are there many gods?"
 
 Initial retrieval:
-
 I Corinthians 8:5
 
 Extended context:
-
 I Corinthians 8:5–6
 
+This allows the Relevant Bible Verses section to preserve more of a passage's intended context rather than presenting an isolated or incomplete fragment.
 
 **Response Generation**
 
@@ -157,8 +140,6 @@ The final pipeline can be summarized as:
 
 **User Question**->**SentenceTransformer**->**Question Embedding**->**FAISS Semantic Search**->**Similarity + Relevance Filtering**->**Top Relevant Bible Verses**->**Extended Verse Context**->**Phi-2**->**Biblically Grounded Response**
 
-Phi-2 receives both the user's question and the retrieved passages. The generation prompt explicitly instructs the model to base its answer only on those passages and not introduce unrelated Biblical references, stories, or hypothetical scenarios.
-This allows the Relevant Bible Verses section to preserve more of the passage's intended context rather than presenting an isolated fragment.
 
 The generated response is then formatted into two sections:
 
