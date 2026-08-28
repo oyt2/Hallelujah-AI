@@ -1,20 +1,26 @@
+# @title Upload, Install, Import
+# Install required packages
+!pip install -q transformers accelerate
+!pip install -q sentence-transformers faiss-cpu
+!pip install -q gradio
+
 # Imports
 import re
 import glob
 import torch
-import os
 import faiss
 import numpy as np
-from sklearn.cluster import KMeans
+
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
 
 from google.colab import files
 uploaded = files.upload()
 
 # Load Bible text file
-bible_file = sorted(glob.glob("KJV*.txt"))[0]
+bible_file = sorted(glob.glob("KJV_formatted.txt"))[0]
 
+# @title Load and Parse Bible
 # Read raw lines
 with open(bible_file, "r", encoding="utf-8") as f:
     raw_lines = f.readlines()
@@ -43,37 +49,10 @@ for line in raw_lines:
         reference = f"{current_book} {chapter_verse}"
         verses.append((verse_text, reference))
 
-# Final texts and references
-verse_texts = [v[0] for v in verses]
-verse_refs = [v[1] for v in verses]
-
-# Parse verse into text and reference, not necessary since a formatted Bible is being used
-# def parse_verse(line):
-#     patterns = [
-#         r'(.*?)\s*\(([^)]+)\)$',
-#         r'(.*?)\s*—\s*([A-Za-z]+ \d+:\d+)',
-#         r'([^¶]+)¶\s*([A-Za-z]+ \d+:\d+)'
-#     ]
-#     for pattern in patterns:
-#         match = re.search(pattern, line)
-#         if match:
-#             return match.group(1).strip(), match.group(2).strip()
-#     return line.strip(), None
-
-# Make sure verses is clean and deduplicated
-seen_refs = set()
-unique_verses = []
-for text, ref in verses:
-    if ref not in seen_refs:
-        unique_verses.append((text, ref))
-        seen_refs.add(ref)
-verses = unique_verses
-
-# Use only these texts for embedding
+# Use verse texts for embedding
 verse_texts = [v[0] for v in verses]
 
-chat_history = []
-
+# @title Embedding Model, FAISS
 # Load embedding model
 embedder = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
 
@@ -91,13 +70,14 @@ index.add(verse_embeddings)
 # Sanity check: confirm FAISS + verses alignment
 assert len(verse_embeddings) == len(verses), "Embedding count and verses mismatch!"
 
+# @title Phi2
 # Load Phi-2 model
 model_name = "microsoft/phi-2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    dtype=torch.float16,
     device_map="auto"
 )
 
@@ -110,7 +90,14 @@ system_prompt = (
     "Do not include imaginary professions or hypothetical scenarios. "
     "Avoid repeating the same conclusions in multiple ways. "
     "Keep your answers clear, concise, and focused only on what the Bible says. "
-    "Respond only with direct teaching, examples from the Bible, or practical advice grounded in scripture. "
+    "Respond only with direct teaching, examples from the Bible, or practical advice grounded in Scripture. "
+
+    "⚠️ Quality Standard: Scripture must never be used decoratively. "
+    "Every verse must be integrated into the teaching itself — never quoted just for display or to sound spiritual. "
+    "Only include verses that are meaningful, contextually relevant, and clearly explained. "
+    "Whenever a verse is mentioned, help the reader understand its context and application. "
+
+    "The tone should remain warm, devotional, and scripturally grounded. "
     "Avoid made-up scenarios or speculative reasoning. "
     "When answering, always include a direct Bible verse if it supports the message. "
     "Use this format when presenting verses, for example: “Love is patient, love is kind...” (1 Corinthians 13:4). "
@@ -119,7 +106,9 @@ system_prompt = (
     "Remember: the people asking questions are not scholars, but everyday believers seeking clarity and encouragement."
 )
 
-def semantic_search(query, top_k=10, min_similarity=0.4, min_relevance=2):
+# @title Semantic Search
+
+def semantic_search(query, top_k=10, min_similarity=0.4):
     query_embedding = embedder.encode([query], convert_to_numpy=True)
     query_embedding = query_embedding.astype("float32")
     query_embedding = query_embedding / np.maximum(np.linalg.norm(query_embedding, axis=1, keepdims=True), 1e-8)
@@ -143,10 +132,6 @@ def semantic_search(query, top_k=10, min_similarity=0.4, min_relevance=2):
         if not ref or len(text.split()) <= 5:
             continue
 
-        # Require a minimum keyword overlap with query
-        if relevance_score(text, query) < min_relevance:
-            continue
-
         # Skip duplicates
         if ref in seen_refs:
             continue
@@ -159,215 +144,113 @@ def semantic_search(query, top_k=10, min_similarity=0.4, min_relevance=2):
 
     return [idx for _, idx in results[:top_k]]
 
-def relevance_score(text, query):
-    query_keywords = set(re.findall(r'\w+', query.lower()))
-    verse_keywords = set(re.findall(r'\w+', text.lower()))
-    return len(query_keywords & verse_keywords)
-
-def search_bible_advanced(query):
-    # fallback keyword-based search
-    keywords = ["money", "gold", "silver", "riches", "wealth", "poor", "give", "greed", "offering"]
-    matches = [i for i, (text, _) in enumerate(verses) if any(k in text.lower() for k in keywords)]
-    return matches[:10]
-
-def clean_answer(text):
-    # Define strong hallucination triggers (regex-friendly)
-    triggers = [
-        r'\b(use ?case|logical reasoning|quiz|scenario|choose (the )?(correct|right)|question:?|answer:?|true or false)\b',
-        r'##\s*(logical reasoning|questions|use ?cases?)',
-        r'\b(imagine you are|let\'s say|suppose|consider this|assume|picture yourself|maybe|possibly|hypothetically|for instance)\b'
-    ]
-
-    cutoff_index = len(text)
-    for pattern in triggers:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match and match.start() < cutoff_index:
-            cutoff_index = match.start()
-
-    cleaned = text[:cutoff_index].strip()
-
-    # Trim any trailing incomplete sentences
-    if cleaned and not re.search(r'[.!?]$', cleaned):
-        last_punct = max(cleaned.rfind('.'), cleaned.rfind('!'), cleaned.rfind('?'))
-        if last_punct != -1:
-            cleaned = cleaned[:last_punct + 1].strip()
-
-    # Fallback to original if cleaning strips too much
-    return cleaned if cleaned else text.strip()
-
-def ends_with_continuation(s):
-    s = s.rstrip()
-    return s.endswith((':', ';', ','))
-
-def get_extended_verse(index, max_verses=3):
-    sentences_with_refs = []
-    current_index = index
-    verses_added = 0
-
-    while verses_added < max_verses and current_index < len(verses):
-        text, ref = verses[current_index]
-        text = text.strip()
-
-        # Split verse text into sentences by period (keep periods)
-        sentences = re.findall(r'[^.]+(?:\.|$)', text)
-
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-            sentences_with_refs.append(f"{sentence} ({ref})")
-
-            # If sentence ends with a period, consider this verse fully processed
-            if sentence.endswith('.'):
-                # We only return here if this is the last sentence of the last verse chunk
-                # If you want to continue accumulating sentences for current verse,
-                # just break here and continue to next verse
-                return " ".join(sentences_with_refs)
-
-        # Prepare to check next verse consecutiveness
-        if current_index + 1 >= len(verses):
-            break
-
-        try:
-            current_book, current_chap_verse = ref.rsplit(" ", 1)
-            next_book, next_chap_verse = verses[current_index + 1][1].rsplit(" ", 1)
-            current_chap, current_verse = map(int, current_chap_verse.split(":"))
-            next_chap, next_verse = map(int, next_chap_verse.split(":"))
-        except Exception:
-            break
-
-        if not (current_book == next_book and current_chap == next_chap and next_verse == current_verse + 1):
-            break
-
-        current_index += 1
-        verses_added += 1
-
-    return " ".join(sentences_with_refs)
-
-# Example testing code snippet:
-# indices_to_test = []
-# for i, (_, ref) in enumerate(verses):
-#     if ref == "Romans 3:21" or ref == "II Peter 2:5":
-#         indices_to_test.append(i)
-
-# print(f"Testing get_extended_verse on indices: {indices_to_test}")
-
-# for idx in indices_to_test:
-#     print(f"Index {idx} ({verses[idx][1]}):")
-#     extended = get_extended_verse(idx)
-#     print(extended)
-#     print("---")
-
-# print("Ends with comma:", ends_with_continuation("Hello, "))
-# print("Ends with comma:", ends_with_continuation("Hello,"))
-# print("Ends with semicolon:", ends_with_continuation("Hello; "))
-# print("Ends with colon:", ends_with_continuation("Hello: "))
-# print("Ends with period:", ends_with_continuation("Hello."))  # Should be False here
-
-def get_verse_insight(index):
+# @title Extended Verse for Incomplete Sentences
+def get_extended_verse(index, max_verses = 5):
     text, ref = verses[index]
-    text = text.strip()
+    bookname, chapter_and_verse = ref.rsplit(" ", 1)
+    chapter, verse = chapter_and_verse.rsplit(":", 1)
+    chapter, verse = int(chapter), int(verse)
+    if text.endswith((".", "!", "?")):
+      return text + " (" + ref + ")"
 
-    sentence_match = re.match(r'^(.+?[.!?])(?:\s|$)', text)
-    if sentence_match:
-        summary = sentence_match.group(1).strip()
     else:
-        summary = text.strip()
+      combined = text + " (" + ref + ")"
+      for i in range(1, max_verses):
+        current_index = index + i
+        if current_index >= len(verses):
+          break
+        next_text, next_ref = verses[current_index]
+        next_bookname, next_chapter_and_verse = next_ref.rsplit(" ", 1)
+        if next_bookname != bookname:
+          break
+        combined += "\n" + next_text + " (" + next_ref + ")"
+        if next_text.endswith((".", "!", "?")):
+          return combined
+      return combined
 
-    # Remove this line if you no longer want the flag printed
-    # needs_extension = not summary.endswith(('.', '!', '?'))
-    # if needs_extension:
-    #     summary += " [extended verse on]"
+# @title Relevant Verses Check
+def check_relevant_verses(output_text, verses):
+    """
+    output_text: str - full generated answer with a **Relevant Bible Verses:** section
+    verses: list of (text, ref) tuples - your canonical verses from the Bible
 
-    insight = f"{ref} teaches: {summary}"
-    return insight
+    Returns: dict with keys:
+      - 'all_correct': bool
+      - 'mismatches': list of tuples (ref, canonical_text, output_text_excerpt)
+    """
 
-def get_verse_insight_extended(index, label):
-    extended_text = get_extended_verse(index)
-    return f"{label} {extended_text}"
+    # Find the Relevant Bible Verses section
+    pattern = r"\*\*Relevant Bible Verses:\*\*(.*)$"
+    match = re.search(pattern, output_text, re.DOTALL)
+    if not match:
+        return {"all_correct": False, "mismatches": [], "error": "No Relevant Bible Verses section found."}
 
-def warm_biblical_teaching(response_text):
-    import re
+    verses_section = match.group(1).strip()
 
-    teaching_match = re.search(r"\*\*Biblical Teaching:\*\*\n(.*?)(?=\n\*\*Relevant Bible Verses:\*\*)", response_text, re.DOTALL)
-    verses_match = re.search(r"\*\*Relevant Bible Verses:\*\*\n(.*)", response_text, re.DOTALL)
+    # Parse each verse line from output, e.g. "- Verse text (Book Chapter:Verse)"
+    output_verses = re.findall(r"-\s*(.+)\s*\(([^)]+)\)", verses_section)
 
-    if not teaching_match or not verses_match:
-        return response_text  # fallback if structure is off
+    if not output_verses:
+        return {
+          "all_correct": False,
+          "mismatches": [],
+          "error": "No verses found for the Relevant Bible Verses section."
+        }
 
-    teaching = teaching_match.group(1).strip()
-    verses = verses_match.group(1).strip()
+    # Build a lookup for canonical verses by reference for quick checking
+    canonical_dict = {ref: text for text, ref in verses}
 
-    # Warm rephrasing logic
-    # You could swap this for GPT-powered rewriting if needed
-    warmer_teaching = (
-        "The Old Testament offers a beautiful reminder of God’s faithful love and mercy. "
-        "We see how He lovingly rescues those who trust Him. Noah, a man who walked with God, "
-        "was saved along with his family. Lot was spared from destruction because his heart longed "
-        "for righteousness in a sinful place. Over and over, we witness how God responds with compassion "
-        "when His people cry out.\n\n"
-        "Salvation wasn’t based on perfection — it was always about trusting in God, turning from sin, "
-        "and depending on His grace. These stories remind us that the heart of God has always been to save, "
-        "redeem, and restore those who seek Him."
-    )
+    mismatches = []
 
-    return f"**Biblical Teaching:**\n{warmer_teaching}\n\n**Relevant Bible Verses:**\n{verses}"
+    for out_text, out_ref in output_verses:
+        if out_ref not in canonical_dict:
+            mismatches.append((out_ref, None, out_text))
+            continue
 
-def ask_phi2(user_input, max_new_tokens=300, temperature=0.3):
-    # Step 1: Semantic + relevance filtering
+        canonical_text = canonical_dict[out_ref].strip()
+        out_text_clean = out_text.strip()
+
+        # Compare texts loosely
+        # Check if canonical text is contained inside output text (or vice versa)
+        if canonical_text not in out_text_clean and out_text_clean not in canonical_text:
+            mismatches.append((out_ref, canonical_text, out_text_clean))
+
+    all_correct = len(mismatches) == 0
+
+    return {"all_correct": all_correct, "mismatches": mismatches}
+
+# @title Main AskPhi2 Function
+def ask_phi2(user_input, max_new_tokens=300, temperature=0.2):
+    # Step 1: Semantic filtering
     relevant_indices = semantic_search(user_input, top_k=15, min_similarity=0.45)
-    min_relevance = 2
-    relevant_indices = [
-        i for i in relevant_indices
-        if relevance_score(verses[i][0], user_input) >= min_relevance
-    ]
 
     if not relevant_indices:
-        relevant_indices = search_bible_advanced(user_input)
+        relevant_indices = semantic_search(user_input, top_k = 15, min_similarity = 0.35)
 
-    # Step 2: Sort by keyword overlap relevance
-    relevant_indices = sorted(
-        relevant_indices,
-        key=lambda i: relevance_score(verses[i][0], user_input),
-        reverse=True
-    )[:3]  # Limit to top 3 directly here
+    # Step 2: Keep top 3 most relevant verses
+    relevant_indices = relevant_indices[:3]
 
-    # Step 3: Prepare extended verse context
-    # verse_block = "\n".join([get_extended_verse(i) for i in relevant_indices])
-
-    # Step 3.5: insight_block instead of verse_block
+    # Step 3: insight_block instead of verse_block
     labels = ["First Verse:", "Second Verse:", "Third Verse:"]
     insight_lines = []
-    verse_count = 0
-    current_index = 0
 
-    while verse_count < 3 and current_index < len(relevant_indices):
-        idx = relevant_indices[current_index]
-        extended_text = get_extended_verse(idx)
-        last_sentence = re.findall(r'[^.]+(?:\.|$)', extended_text.strip())[-1].strip()
-
-        insight_lines.append(f"{labels[verse_count]} {extended_text}")
-
-        if last_sentence.endswith('.'):
-            verse_count += 1
-
-        current_index += 1
+    for position, idx in enumerate(relevant_indices):
+      extended_text = get_extended_verse(idx)
+      insight_lines.append(f"{labels[position]} {extended_text}")
 
     insight_block = "\n\n".join(insight_lines)
-
-    # DEBUG: print verses used
-    print("Selected verses for prompt:")
-    for i in relevant_indices:
-        print(f"{verses[i][1]}: {get_extended_verse(i)}")
 
     # Step 4: Build full prompt
     teaching_prompt = (
         f"{system_prompt}\n\n"
         f"### Question:\n{user_input}\n\n"
-        # f"### Verses:\n{verse_block}\n\n" # if verse_block is used, uncomment again
         f"### Verse Insights:\n{insight_block}\n\n"
-        f"Write a clear, biblically grounded explanation answering the question.\n"
-        f"Start with a summary of the biblical teaching, then explain the message behind the verses.\n"
+        f"Write a biblically grounded answer to the question, using only the teachings in the verses below.\n"
+        f"Only state claims that can be directly supported by the supplied verse text.\n"
+        f"Structure your response like this:\n"
+        f"1. Begin with a brief summary of the biblical answer.\n"
+        f"2. Then, for each verse, explain what it teaches and how it contributes to the answer.\n"
+        f"3. Do not include any stories, theology, or interpretations not present in the verses themselves.\n"
         f"Do not quote verses directly—paraphrase instead.\n"
         f"Strictly avoid fictional scenarios, imaginary characters, use cases, logical reasoning tasks, or quizzes.\n"
         f"Do not include anything labeled 'Use Case', 'Quiz', 'Logical Reasoning', 'Question:', or 'Answer:'.\n"
@@ -377,6 +260,7 @@ def ask_phi2(user_input, max_new_tokens=300, temperature=0.3):
         f"'These verses do not directly answer the question, but they reveal this truth: ...'\n"
         f"Base your entire answer strictly on these three verses. Do not add stories, people, or events that are not directly described in these verses. "
         f"Conclude with exactly these three references: {', '.join(verses[i][1] for i in relevant_indices)}.\n\n"
+        f"Again: ONLY use the teachings in the verses listed above. Do not introduce any other verse.\n\n"
         f"### Response:"
     )
 
@@ -395,13 +279,10 @@ def ask_phi2(user_input, max_new_tokens=300, temperature=0.3):
         eos_token_id=tokenizer.eos_token_id,
     )
 
-    result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    answer = result[len(teaching_prompt):].strip()
+    generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    answer = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
 
-    # Step 6: Clean hallucinations/speculations (if you want to enable)
-    # answer = clean_answer(answer)
-
-    # Step 7: Ensure final punctuation
+    # Step 6: Ensure final punctuation
     sentences = re.split(r'(?<=[.!?])\s+', answer)
     if sentences and not re.search(r'[.!?]$', sentences[-1]):
         sentences = sentences[:-1]
@@ -409,15 +290,20 @@ def ask_phi2(user_input, max_new_tokens=300, temperature=0.3):
     answer = re.sub(r'\s+', ' ', answer).strip()
     answer = re.sub(r'(\s[.!?]){2,}', r'\1', answer)
 
-    # Step 8: Format reference list (not full verse text)
-    references_only = sorted(
-        set(verses[i][1] for i in relevant_indices)
-    )
-
-    # Step 9: Final formatted return
+    # Step 7: Final formatted return
     formatted = "**Biblical Teaching:**\n" + answer
     formatted += "\n\n**Relevant Bible Verses:**\n" + "\n".join(
         f"- {get_extended_verse(i)}" for i in relevant_indices
     )
+
+    # --- Verse correctness check ---
+    check_result = check_relevant_verses(formatted, verses)
+    if not check_result["all_correct"]:
+        print("Verse mismatch detected in Relevant Bible Verses section:")
+        for ref, canon, out in check_result["mismatches"]:
+            print(f"Reference: {ref}")
+            print(f"Canonical: {canon}")
+            print(f"Output: {out}")
+            print("---")
 
     return formatted
